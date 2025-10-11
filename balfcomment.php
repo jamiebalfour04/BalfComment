@@ -4,6 +4,14 @@ class BalfComment {
 
   private $connection = null;
 
+  public function createTables(){
+    $query1 = 'CREATE TABLE `BalfComment_Posts` (`comment_id` int(11) NOT NULL, `comment_url` varchar(100) NOT NULL, `comment_title` varchar(50) NOT NULL, `comment_text` text NOT NULL, `poster_name` varchar(20) NOT NULL, `timestamp` int(11) NOT NULL, `parent` int(11) NOT NULL DEFAULT -1)';
+
+    $query2 = 'ALTER TABLE `BalfComment_Posts` ADD PRIMARY KEY (`comment_id`);'
+
+    $query3 = 'ALTER TABLE `BalfComment_Posts` MODIFY `comment_id` int(11) NOT NULL AUTO_INCREMENT;'
+  }
+
   public function __construct($con){
     $this->connection = $con;
   }
@@ -23,46 +31,24 @@ class BalfComment {
     $main_array = array();
     while($comment = $stmt->fetch(PDO::FETCH_ASSOC)){
 
-      $comment['replies'] = array();
-
-
-      $reply_statement->execute(array(":parent" => $comment['comment_id']));
-
-      while($reply = $reply_statement->fetch(PDO::FETCH_ASSOC)){
-        array_push($comment['replies'], $reply);
-      }
-
-      array_push($main_array, $comment);
+      $main_array[$comment['comment_id']] = $comment;
     }
 
     return $main_array;
 
   }
 
-  public function newComment($url, $title, $text, $poster_name){
+  public function newComment($url, $title, $text, $poster_name, $parent = -1){
     $timestamp = time();
-    $query = "INSERT INTO `BalfComment_Posts` (comment_url, comment_title, comment_text, poster_name, timestamp) VALUES (:url, :title, :text, :poster, :timestamp)";
+    $query = "INSERT INTO `BalfComment_Posts` (comment_url, comment_title, comment_text, poster_name, timestamp, parent) VALUES (:url, :title, :text, :poster, :timestamp, :parent)";
     $stmt = $this->connection->prepare($query);
 
-    if(!$stmt->execute(array(":url" => $url, ":title" => htmlentities($title), ":text" => htmlentities($text), ":poster" => htmlentities($poster_name), ":timestamp" => $timestamp))){
+    if(!$stmt->execute(array(":url" => $url, ":title" => htmlentities($title), ":text" => htmlentities($text), ":poster" => htmlentities($poster_name), ":timestamp" => $timestamp, ":parent" => $parent))){
       return false;
     }
 
     return true;
 
-  }
-
-  public function newReply($post_id, $text, $poster_name){
-    $timestamp = time();
-
-    $query = "INSERT INTO `BalfComment_Replies` (parent_comment, reply_text, reply_user, timestamp) VALUES (:parent, :text, :poster, :timestamp)";
-    $stmt = $this->connection->prepare($query);
-
-    if(!$stmt->execute(array(":parent" => $post_id, ":text" => htmlentities($text), ":poster" => htmlentities($poster_name), ":timestamp" => $timestamp))){
-      return false;
-    }
-
-    return true;
   }
 
   public function generateReplyButton($comment, $text){
@@ -74,12 +60,22 @@ class BalfComment {
 
     $output = '<div class="balfcomments">';
     if(count($comments) > 0){
-      foreach($comments as $comment){
-        $output .= '<div class="balfcomment">';
+      foreach($comments as $k => $comment){
+        $reply = false;
+        $reply_class = "";
+        if($comment['parent'] != -1){
+          $reply = true;
+          $reply_class = " reply";
+        }
+        $output .= '<div class="balfcomment'.$reply_class.'" id="balfcomment_id_'.$comment['comment_id'].'">';
           $output .= '<div class="wrapper">';
             $output .= '<div class="row">';
+              $said = " said";
+              if($reply){
+                $said = ' replied to <a href="#balf_comment_id_'.$comment['parent'].'">' . $comments[$comment['parent']]['poster_name'] . '</a>';
+              }
               $output .= '<div class="col_lg_9 col_md_9 col_sm_8 col_xs_6 col_xxs_6">';
-                $output .= '<div class="poster">'.$comment['poster_name'].':</div>';
+                $output .= '<div class="poster">'.$comment['poster_name']. $said.'</div>';
               $output .= '</div>';
               $output .= '<div class="col_lg_3 col_md_3 col_sm_4 col_xs_6 col_xxs_6">';
                 $output .= '<div class="timestamp">'.date("Y-m-d H:i:s", $comment['timestamp']).'</div>';
@@ -89,42 +85,15 @@ class BalfComment {
               $output .= '<div class="title">'.$comment['comment_title'].'</div>';
               $output .= '<div class="text">'.$comment['comment_text'].'</div>';
             $output .= '</div>';
+          $output .= '<div class="reply_zone"><div class="right_align"><button class="bc_reply_button button" data-comment-id="'.$comment['comment_id'].'">Reply</button></div></div>';
           $output .= '</div>';
-          $output .= '<div class="replies">';
           $last_poster = '';//$comment['poster_name'];
           $count = 0;
           $open = false;
           $print_name = false;
 
-          foreach($comment['replies'] as $reply){
-            $print_name = false;
-            if($last_poster != $reply['reply_user']){
-              $print_name = true;
-              if($count > 0){
-                $output .= '</div>';
-                $open = false;
-              }
-              $output .= '<div class="comment_group">';
-              $open = true;
-            }
-            $last_poster = $reply['reply_user'];
-
-
-            $output .= '<div class="reply">';
-              $output .= '<div class="wrapper">';
-                if($print_name){
-                  $output .= '<div class="poster">'.$reply['reply_user'].'</div>';
-                }
-                $output .= '<div class="text">'.$reply['reply_text'].'</div>';
-              $output .= '</div>';
-            $output .= '</div>';
-            $count++;
-          }
-          if($open){
-            $output .= '</div>';
-          }
           $output .= '</div>';
-          $output .= '<div class="reply_zone"><div class="right_align"><button class="bc_reply_button button" data-comment-id="'.$comment['comment_id'].'">Reply</button></div></div>';
+
 
         $output .= '</div>';
       }
