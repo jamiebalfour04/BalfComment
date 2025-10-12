@@ -1,5 +1,5 @@
 <?php
-
+// This is using my website code - it won't work without some tweaks, but it's used to demonstrate how easy it is to use.
 if(JBShared::hCaptchaCheck()){
   include "balfcomment.php";
 
