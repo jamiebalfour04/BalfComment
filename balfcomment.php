@@ -17,21 +17,34 @@ class BalfComment {
   }
 
   public function getComments($url){
-    $query = "SELECT * FROM `BalfComment_Posts` WHERE comment_url = :url ORDER BY timestamp";
+    //Find parent comments first
+    $query = "SELECT * FROM `BalfComment_Posts` WHERE comment_url = :url AND parent = -1 ORDER BY timestamp";
     $stmt = $this->connection->prepare($query);
 
     if(!$stmt->execute(array(":url" => $url))){
       return false;
     }
 
-    $query = "SELECT * FROM `BalfComment_Replies` WHERE parent_comment = :parent ORDER BY timestamp";
+    //Now find replies
+    $query = "SELECT * FROM `BalfComment_Posts` WHERE comment_url = :url AND parent > -1 ORDER BY timestamp";
     $reply_statement = $this->connection->prepare($query);
 
     //Iterate the comments
     $main_array = array();
     while($comment = $stmt->fetch(PDO::FETCH_ASSOC)){
 
+      //Create an empty replies array
+      $comment['replies'] = array();
       $main_array[$comment['comment_id']] = $comment;
+    }
+
+    if(!$reply_statement->execute(array(":url" => $url))){
+      return false;
+    }
+
+    //Store the replies in the replies array
+    while($comment = $reply_statement->fetch(PDO::FETCH_ASSOC)){
+      array_push($main_array[$comment['parent']]['replies'], $comment);
     }
 
     return $main_array;
@@ -51,65 +64,72 @@ class BalfComment {
 
   }
 
-  public function generateReplyButton($comment, $text){
-    return '<button class="bc_reply_button button" data-comment-id="'.$comment['comment_id'].'">'.$text.'</button>';
+  private function autoGenerateComment($comments, $comment){
+    $output = "";
+    $reply = false;
+    $reply_class = "";
+    if($comment['parent'] != -1){
+      $reply = true;
+      $reply_class = " reply";
+
+      if($comment['user_id'] != -1){
+        $reply_class = " reply is_user";
+      }
+    }
+    $output .= '<div class="balfcomment'.$reply_class.'" id="balfcomment_id_'.$comment['comment_id'].'" data-poster-name="'.$comment['poster_name'].'">';
+      $output .= '<div class="wrapper">';
+        $output .= '<div class="top">';
+          $said = "";//" said";
+          if($reply){
+            $said = ' replied to <a href="#balfcomment_id_'.$comment['parent'].'">' . $comments[$comment['parent']]['poster_name'] . '</a>';
+          }
+          $user = "";
+          if($comment['user_id'] != -1){
+            $user = '<span class="user">User</span>';
+            if($comment['user_id'] == 1){
+              $user = '<span class="user">Site Admin</span>';
+            }
+          }
+          //$output .= '<div class="col_lg_9 col_md_9 col_sm_8 col_xs_6 col_xxs_6">';
+            $output .= '<div class="poster">'.$comment['poster_name'].$user. $said.'</div>';
+          //$output .= '</div>';
+          //$output .= '<div class="col_lg_3 col_md_3 col_sm_4 col_xs_6 col_xxs_6">';
+            $output .= '<div class="timestamp">'.date("Y-m-d H:i:s", $comment['timestamp']).'</div>';
+          //$output .= '</div>';
+        $output .= '</div>';
+        $output .= '<div class="content">';
+          $output .= '<div class="title">'.$comment['comment_title'].'</div>';
+          $output .= '<div class="text">'.html_entity_decode($comment['comment_text']).'</div>';
+        $output .= '</div>';
+      $output .= '<div class="reply_zone"><div class="right_align"><button class="bc_reply_button button" data-comment-id="'.$comment['comment_id'].'">Reply</button></div></div>';
+      //$output .= '</div>';
+      $last_poster = '';//$comment['poster_name'];
+      $count = 0;
+      $open = false;
+      $print_name = false;
+
+      $output .= '</div>';
+
+
+    $output .= '</div>';
+
+    return $output;
   }
 
   public function autoGenerateComments($url){
     $comments = $this->getComments($url);
-
+    //print_r($comments);
     $output = '<div class="balfcomments">';
     if(count($comments) > 0){
       foreach($comments as $k => $comment){
-        $reply = false;
-        $reply_class = "";
-        if($comment['parent'] != -1){
-          $reply = true;
-          $reply_class = " reply";
+        echo $this->autoGenerateComment($comments, $comment);
 
-          if($comment['user_id'] != -1){
-            $reply_class = " reply is_user";
-          }
+        foreach($comment['replies'] as $reply){
+          echo $this->autoGenerateComment($comments, $reply);
         }
-        $output .= '<div class="balfcomment'.$reply_class.'" id="balfcomment_id_'.$comment['comment_id'].'">';
-          $output .= '<div class="wrapper">';
-            $output .= '<div class="row">';
-              $said = " said";
-              if($reply){
-                $said = ' replied to <a href="#balfcomment_id_'.$comment['parent'].'">' . $comments[$comment['parent']]['poster_name'] . '</a>';
-              }
-              $user = "";
-              if($comment['user_id'] != -1){
-                $user = '<span class="user">User</span>';
-                if($comment['user_id'] == 1){
-                  $user = '<span class="user">Site Admin</span>';
-                }
-              }
-              $output .= '<div class="col_lg_9 col_md_9 col_sm_8 col_xs_6 col_xxs_6">';
-                $output .= '<div class="poster">'.$comment['poster_name'].$user. $said.'</div>';
-              $output .= '</div>';
-              $output .= '<div class="col_lg_3 col_md_3 col_sm_4 col_xs_6 col_xxs_6">';
-                $output .= '<div class="timestamp">'.date("Y-m-d H:i:s", $comment['timestamp']).'</div>';
-              $output .= '</div>';
-            $output .= '</div>';
-            $output .= '<div class="content">';
-              $output .= '<div class="title">'.$comment['comment_title'].'</div>';
-              $output .= '<div class="text">'.$comment['comment_text'].'</div>';
-            $output .= '</div>';
-          $output .= '<div class="reply_zone"><div class="right_align"><button class="bc_reply_button button" data-comment-id="'.$comment['comment_id'].'">Reply</button></div></div>';
-          $output .= '</div>';
-          $last_poster = '';//$comment['poster_name'];
-          $count = 0;
-          $open = false;
-          $print_name = false;
-
-          $output .= '</div>';
-
-
-        $output .= '</div>';
       }
     } else {
-      $output .= '<p class="center_align">There are no comments on this page.</p>';
+      $output .= '<p style="color:#999" class="center_align">There are no comments on this page.</p>';
     }
 
     $output .= '</div>';
